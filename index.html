@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three Little Pigs: Sensory Adventure</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Open Sans', sans-serif;
+            touch-action: manipulation;
+            overflow: hidden;
+            background-color: #f0fdf4;
+        }
+
+        .pig-shake {
+            animation: shake 0.5s infinite;
+        }
+
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+
+        .huff-puff-anim {
+            animation: huff 1.5s ease-in-out infinite;
+        }
+
+        @keyframes huff {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 1; }
+        }
+
+        .house-fall {
+            transition: all 1s ease-in;
+            transform: translateY(1000px) rotate(45deg);
+            opacity: 0;
+        }
+
+        /* Sound Cue Styling */
+        .sound-label {
+            position: absolute;
+            font-weight: 800;
+            color: #ef4444;
+            background: white;
+            padding: 4px 12px;
+            border-radius: 8px;
+            border: 2px solid #ef4444;
+            pointer-events: none;
+            z-index: 100;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+            70% { transform: scale(1.2) rotate(5deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-green-50">
+
+    <!-- Game Container -->
+    <div id="game-container" class="relative w-full h-screen flex flex-col items-center justify-center p-4">
+        
+        <!-- Header / Visual Schedule -->
+        <div class="absolute top-4 left-4 flex gap-4 items-center">
+            <div class="flex gap-2 items-center bg-white/80 p-2 rounded-full shadow-sm border border-green-200">
+                <span class="text-2xl">🐷</span>
+                <div id="progress-dots" class="flex gap-1">
+                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                    <div class="w-3 h-3 rounded-full bg-gray-300"></div>
+                    <div class="w-3 h-3 rounded-full bg-gray-300"></div>
+                    <div class="w-3 h-3 rounded-full bg-gray-300"></div>
+                </div>
+            </div>
+
+            <!-- Volume Control (Critical for ASD learners) -->
+            <button id="volume-toggle" onclick="toggleVolume()" class="bg-white/80 p-2 rounded-full border border-gray-200 flex items-center gap-2 shadow-sm hover:bg-gray-50">
+                <span id="volume-icon">🔊</span>
+                <span id="volume-text" class="text-xs font-bold mr-1">LOW</span>
+            </button>
+        </div>
+
+        <!-- Emotion Indicator -->
+        <div id="emotion-indicator" class="absolute top-4 right-4 bg-white p-3 rounded-xl shadow-md border-2 border-yellow-400 flex flex-col items-center">
+            <span id="emotion-emoji" class="text-4xl">😊</span>
+            <span id="emotion-text" class="text-xs font-bold uppercase tracking-wider mt-1 text-gray-600">Safe</span>
+        </div>
+
+        <!-- Main Content Area -->
+        <div id="scene-content" class="w-full max-w-2xl text-center">
+            <!-- Content Injected by JS -->
+        </div>
+
+        <!-- Bottom Controls -->
+        <div id="controls" class="absolute bottom-8 w-full flex justify-center gap-4 px-4">
+            <!-- Buttons Injected by JS -->
+        </div>
+
+    </div>
+
+    <!-- Visual Sound Overlay -->
+    <div id="sound-cue-layer" class="fixed inset-0 pointer-events-none z-50"></div>
+
+    <!-- Feedback Message Box -->
+    <div id="message-box" class="fixed inset-0 bg-black/40 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm border-4 border-green-400">
+            <h2 id="msg-title" class="text-3xl font-bold mb-4">Well Done!</h2>
+            <p id="msg-body" class="text-xl mb-6">You built the house!</p>
+            <button onclick="closeMessage()" class="bg-green-500 text-white px-8 py-4 rounded-2xl text-2xl font-bold shadow-lg active:scale-95 transition-transform">
+                OK!
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Game State
+        const state = {
+            step: 0,
+            houseType: null,
+            volume: 'low', // 'off', 'low', 'high'
+            audioCtx: null
+        };
+
+        // --- Audio Synthesizer ---
+        function initAudio() {
+            if (!state.audioCtx) {
+                state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSynthesizedSound(type) {
+            if (state.volume === 'off') return;
+            initAudio();
+            const ctx = state.audioCtx;
+            const volumeLevel = state.volume === 'low' ? 0.1 : 0.3;
+
+            if (type === 'pop') {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(10, ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(volumeLevel, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.1);
+            }
+
+            if (type === 'wind') {
+                const bufferSize = ctx.sampleRate * 1.5;
+                const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1000, ctx.currentTime);
+                filter.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 1.5);
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(0, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(volumeLevel, ctx.currentTime + 0.2);
+                gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(ctx.destination);
+                noise.start();
+            }
+
+            if (type === 'crash') {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(100, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(volumeLevel, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.4);
+            }
+
+            if (type === 'success') {
+                const notes = [523.25, 659.25, 783.99]; // C E G
+                notes.forEach((freq, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime + (i * 0.1));
+                    gain.gain.setValueAtTime(volumeLevel, ctx.currentTime + (i * 0.1));
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (i * 0.1) + 0.5);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime + (i * 0.1));
+                    osc.stop(ctx.currentTime + (i * 0.1) + 0.5);
+                });
+            }
+        }
+
+        function showVisualSound(text) {
+            const layer = document.getElementById('sound-cue-layer');
+            const el = document.createElement('div');
+            el.className = 'sound-label';
+            el.innerText = `[${text}]`;
+            el.style.left = (Math.random() * 40 + 30) + '%';
+            el.style.top = (Math.random() * 20 + 40) + '%';
+            layer.appendChild(el);
+            setTimeout(() => el.remove(), 1500);
+        }
+
+        // --- UI Logic ---
+        function toggleVolume() {
+            if (state.volume === 'low') {
+                state.volume = 'high';
+                document.getElementById('volume-icon').innerText = '🔊';
+                document.getElementById('volume-text').innerText = 'HIGH';
+            } else if (state.volume === 'high') {
+                state.volume = 'off';
+                document.getElementById('volume-icon').innerText = '🔇';
+                document.getElementById('volume-text').innerText = 'OFF';
+            } else {
+                state.volume = 'low';
+                document.getElementById('volume-icon').innerText = '🔉';
+                document.getElementById('volume-text').innerText = 'LOW';
+            }
+            playSynthesizedSound('pop');
+        }
+
+        const scenes = [
+            {
+                title: "Choose a Material",
+                instruction: "Touch a material to build a house!",
+                emotion: "happy",
+                setup: () => {
+                    const html = `
+                        <h1 class="text-4xl font-bold text-green-800 mb-8">Build a House</h1>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                            <button onclick="selectMaterial('straw')" class="group p-4 bg-white rounded-3xl border-4 border-yellow-200 hover:border-yellow-400 shadow-xl transition-all active:scale-95">
+                                <div class="text-6xl mb-2">🌾</div>
+                                <div class="text-xl font-bold text-yellow-700">STRAW</div>
+                                <div class="text-xs text-yellow-500 italic">"Scratchy"</div>
+                            </button>
+                            <button onclick="selectMaterial('wood')" class="group p-4 bg-white rounded-3xl border-4 border-orange-200 hover:border-orange-400 shadow-xl transition-all active:scale-95">
+                                <div class="text-6xl mb-2">🪵</div>
+                                <div class="text-xl font-bold text-orange-700">WOOD</div>
+                                <div class="text-xs text-orange-500 italic">"Hard"</div>
+                            </button>
+                            <button onclick="selectMaterial('brick')" class="group p-4 bg-white rounded-3xl border-4 border-red-200 hover:border-red-400 shadow-xl transition-all active:scale-95">
+                                <div class="text-6xl mb-2">🧱</div>
+                                <div class="text-xl font-bold text-red-700">BRICK</div>
+                                <div class="text-xs text-red-500 italic">"Solid"</div>
+                            </button>
+                        </div>
+                    `;
+                    document.getElementById('scene-content').innerHTML = html;
+                    document.getElementById('controls').innerHTML = '';
+                }
+            },
+            {
+                title: "Oh No! The Wolf!",
+                instruction: "The wolf is coming! How do the pigs feel?",
+                emotion: "scared",
+                setup: () => {
+                    const houseEmoji = state.houseType === 'straw' ? '🌾🛖' : (state.houseType === 'wood' ? '🪵🏚' : '🧱🏠');
+                    const html = `
+                        <div class="relative flex flex-col items-center">
+                            <div class="flex gap-4 mb-4">
+                                <div class="text-7xl pig-shake">🐷</div>
+                                <div class="text-7xl pig-shake">🐷</div>
+                                <div class="text-7xl pig-shake">🐷</div>
+                            </div>
+                            <div id="the-house" class="text-9xl mb-8 relative z-10 p-4 border-b-4 border-green-800">
+                                ${houseEmoji}
+                            </div>
+                            <div class="text-8xl animate-bounce">🐺</div>
+                            <h2 class="text-3xl font-bold text-red-600 mt-4">The Wolf is here!</h2>
+                        </div>
+                    `;
+                    document.getElementById('scene-content').innerHTML = html;
+                    document.getElementById('controls').innerHTML = `
+                        <button onclick="nextStep()" class="bg-red-500 text-white px-10 py-5 rounded-3xl text-3xl font-bold shadow-xl active:scale-95">
+                            Huff and Puff!
+                        </button>
+                    `;
+                }
+            },
+            {
+                title: "Huff and Puff",
+                instruction: "Blow with the wolf!",
+                emotion: "scared",
+                setup: () => {
+                    const html = `
+                        <div class="flex flex-col items-center">
+                            <div class="text-8xl mb-4 huff-puff-anim">🐺</div>
+                            <div class="bg-blue-100 p-8 rounded-full mb-8 border-4 border-blue-400">
+                                <p class="text-4xl font-black text-blue-800 tracking-widest uppercase">
+                                    I'll HUFF...<br>and PUFF...
+                                </p>
+                            </div>
+                            <div id="target-house" class="text-9xl transition-all duration-1000">
+                                ${state.houseType === 'straw' ? '🌾🛖' : (state.houseType === 'wood' ? '🪵🏚' : '🧱🏠')}
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('scene-content').innerHTML = html;
+                    document.getElementById('controls').innerHTML = `
+                        <button onclick="blowHouse()" class="bg-blue-500 text-white px-10 py-5 rounded-3xl text-3xl font-bold shadow-xl active:scale-95 flex items-center gap-4">
+                            <span>💨</span> BLOW! <span>💨</span>
+                        </button>
+                    `;
+                }
+            },
+            {
+                title: "Safe and Sound",
+                instruction: "The story is finished.",
+                emotion: "happy",
+                setup: () => {
+                    const resultMsg = state.houseType === 'brick' 
+                        ? "The Brick house is SOLID! Everyone is safe." 
+                        : "The pigs ran to the brick house. They are safe now!";
+                    
+                    const html = `
+                        <div class="flex flex-col items-center">
+                             <div class="text-9xl mb-6">🏠</div>
+                             <div class="flex gap-4 mb-6">
+                                <div class="text-6xl">🐷</div>
+                                <div class="text-6xl">🐷</div>
+                                <div class="text-6xl">🐷</div>
+                            </div>
+                            <h2 class="text-4xl font-bold text-green-700 mb-4">Safe!</h2>
+                            <p class="text-xl text-gray-600 mb-8 max-w-md">${resultMsg}</p>
+                            <div class="text-8xl grayscale opacity-20">🐺</div>
+                        </div>
+                    `;
+                    document.getElementById('scene-content').innerHTML = html;
+                    document.getElementById('controls').innerHTML = `
+                        <button onclick="resetGame()" class="bg-green-600 text-white px-8 py-4 rounded-2xl text-2xl font-bold shadow-lg active:scale-95">
+                            Play Again
+                        </button>
+                    `;
+                    playSynthesizedSound('success');
+                }
+            }
+        ];
+
+        function updateUI() {
+            const currentScene = scenes[state.step];
+            currentScene.setup();
+
+            // Update Progress Dots
+            const dots = document.getElementById('progress-dots').children;
+            for(let i=0; i<dots.length; i++) {
+                dots[i].className = `w-3 h-3 rounded-full ${i <= state.step ? 'bg-green-500' : 'bg-gray-300'}`;
+            }
+
+            // Update Emotion Indicator
+            const indicator = document.getElementById('emotion-emoji');
+            const text = document.getElementById('emotion-text');
+            if (currentScene.emotion === 'happy') {
+                indicator.innerText = "😊";
+                text.innerText = "Safe / Happy";
+            } else {
+                indicator.innerText = "😨";
+                text.innerText = "Scared / Worried";
+            }
+        }
+
+        function selectMaterial(type) {
+            state.houseType = type;
+            playSynthesizedSound('pop');
+            showVisualSound("CLACK");
+            const msgs = {
+                straw: "Straw is scratchy and light.",
+                wood: "Wood is hard and brown.",
+                brick: "Brick is heavy and SOLID!"
+            };
+            showMessage("Good Building!", msgs[type], () => {
+                state.step = 1;
+                updateUI();
+            });
+        }
+
+        function blowHouse() {
+            const house = document.getElementById('target-house');
+            playSynthesizedSound('wind');
+            showVisualSound("WHOOSH!");
+            
+            if (state.houseType === 'brick') {
+                house.classList.add('pig-shake');
+                setTimeout(() => {
+                    house.classList.remove('pig-shake');
+                    showMessage("Solid!", "The brick house didn't move! It is too strong.", () => {
+                        state.step = 3;
+                        updateUI();
+                    });
+                }, 1500);
+            } else {
+                setTimeout(() => {
+                    house.classList.add('house-fall');
+                    playSynthesizedSound('crash');
+                    showVisualSound("CRASH!");
+                    setTimeout(() => {
+                        showMessage("Oh No!", `The ${state.houseType} house blew down! Run to the bricks!`, () => {
+                            state.step = 3;
+                            updateUI();
+                        });
+                    }, 500);
+                }, 1000);
+            }
+        }
+
+        function nextStep() {
+            state.step++;
+            if (state.step >= scenes.length) state.step = 0;
+            updateUI();
+        }
+
+        function resetGame() {
+            state.step = 0;
+            state.houseType = null;
+            updateUI();
+        }
+
+        // Message Logic
+        let currentMsgCallback = null;
+
+        function showMessage(title, body, callback) {
+            document.getElementById('msg-title').innerText = title;
+            document.getElementById('msg-body').innerText = body;
+            document.getElementById('message-box').classList.remove('hidden');
+            currentMsgCallback = callback;
+        }
+
+        function closeMessage() {
+            document.getElementById('message-box').classList.add('hidden');
+            if (currentMsgCallback) currentMsgCallback();
+        }
+
+        // Initialize
+        window.onload = updateUI;
+    </script>
+</body>
+</html>
